@@ -125,8 +125,8 @@ export default function Slide2Privacy() {
         <div className="grid grid-cols-2 gap-3 w-full">
           {CARDS.map((card, i) => (
             <div key={i} className="rounded-2xl flex flex-col gap-4"
-              style={{ padding: '48px 56px' }}
               style={{
+                padding: '30px 35px',
                 background: 'rgba(255,255,255,0.09)',
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(255,255,255,0.16)',

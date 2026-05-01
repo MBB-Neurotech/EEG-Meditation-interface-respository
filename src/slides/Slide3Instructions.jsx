@@ -166,8 +166,8 @@ export default function Slide3Instructions() {
         <div className="flex flex-col gap-3 w-full">
           {ITEMS.map((item, i) => (
             <div key={i} className="rounded-2xl flex items-start gap-5"
-              style={{ padding: '28px 32px' }}
               style={{
+                padding: '28px 32px',
                 background: item.highlight ? 'rgba(245,158,11,0.07)' : 'rgba(255,255,255,0.06)',
                 backdropFilter: 'blur(20px)',
                 border: `1px solid ${item.border || 'rgba(255,255,255,0.1)'}`,
