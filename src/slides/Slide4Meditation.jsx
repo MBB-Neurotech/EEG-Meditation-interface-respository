@@ -114,18 +114,14 @@ export default function Slide4Meditation() {
             border: '1px solid rgba(150,185,235,0.35)',
           }}>
           <div className="relative" style={{ paddingBottom: '56.25%' }}>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center"
-                style={{ background: 'rgba(90,130,220,0.1)', border: '1px solid rgba(90,130,220,0.2)' }}>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"
-                  style={{ color: '#6e95d8' }}>
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-              <p className="font-sans text-xs tracking-widest uppercase" style={{ color: '#96b2cc', letterSpacing: '0.15em' }}>
-                Video will be displayed here
-              </p>
-            </div>
+            <iframe
+              className="absolute inset-0 w-full h-full"
+              src="https://www.youtube.com/embed/UkOISzx-mjE"
+              title="Guided Meditation"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
           </div>
         </div>
       </div>
