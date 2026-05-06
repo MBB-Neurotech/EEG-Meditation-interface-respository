@@ -170,9 +170,6 @@ export default function EEGPage() {
             <span className="font-serif text-lg font-light" style={{ color: 'rgba(255,255,255,0.82)' }}>
               EEG Monitor
             </span>
-            <span className="font-sans text-[9px] tracking-[0.3em] uppercase" style={{ color: 'rgba(255,255,255,0.2)' }}>
-              EMOTIV Lite
-            </span>
           </div>
         </div>
 
@@ -251,7 +248,7 @@ export default function EEGPage() {
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p className="font-sans text-xs" style={{ color: 'rgba(160,195,255,0.55)' }}>
-                Connect the EMOTIV Lite headset, then press <strong style={{ color: 'rgba(110,231,183,0.7)' }}>Start</strong> to begin streaming EEG data. Waveforms will appear here in real time.
+                Connect the EEG headset, then press <strong style={{ color: 'rgba(110,231,183,0.7)' }}>Start</strong> to begin streaming EEG data. Waveforms will appear here in real time.
               </p>
             </div>
           )}
