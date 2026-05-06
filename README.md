@@ -1,10 +1,10 @@
 # Running the app
 If not done already, follow the instructions here to download the code: [EEG Meditation Team Guide](https://docs.google.com/document/d/1osU8i9ZI_V6nUZUVps4638OfmPaFP3pMxIYc97aGRQE/edit?tab=t.0)
 
-Next, in the VS Code terminal (If not open, select Terminal in the top bar on a Mac, and select New Terminal) type this command: npm install
+Next, in the VS Code terminal (If not open, select Terminal in the top bar on a Mac, and select New Terminal) type this command: **npm install**
 - This command will download and install all of the libraries that the code depends on (If already done previously, re-entering the command will simply verify that the libraries are installed correctly and up-to-date)
 
-Finally, enter this command: npm run dev
+Finally, enter this command: **npm run dev**
 - This command will produce a localhost link (meaning that it's only accessible on your computer) that will run the app
 
 # React + Vite
