@@ -1,0 +1,3 @@
+brainflow>=5.12.0
+websockets>=12.0
+pylsl>=1.16.0
