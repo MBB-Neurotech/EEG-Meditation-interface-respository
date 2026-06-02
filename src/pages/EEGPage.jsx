@@ -2,119 +2,27 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 // ── Config ───────────────────────────────────────────────────────────────────
-// Deeper, more saturated palette — readable on a light background
 const CHANNELS = [
   { name: 'CH1', color: '#059669' },
   { name: 'CH2', color: '#0284c7' },
   { name: 'CH3', color: '#4f46e5' },
   { name: 'CH4', color: '#7c3aed' },
 ]
-const BUFFER_SIZE    = 400   // samples per channel in ring buffer
-const SCALE          = 50    // µV divisor — matches friend's server.py
-const SAMPLE_RATE    = 200   // Hz
-const FFT_SIZE       = 256   // must be power of 2
-const HISTORY_LEN    = 300   // 5 min at 1 pt/sec
-const BASELINE_SECS  = 30    // seconds to collect baseline
-const SESSION_SECS   = 15 * 60
+const BUFFER_SIZE   = 400
+const SCALE         = 50      // µV divisor
+const HISTORY_MAX   = 1200    // 250ms × 1200 = 5 min
+const BASELINE_SECS = 30      // seconds of band data to collect for baseline
+const SESSION_SECS  = 15 * 60
+const EMA_ALPHA     = 0.1     // smoothing factor for live metrics
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
-
-// ── FFT (Cooley-Tukey radix-2, in-place) ────────────────────────────────────
-function fftInPlace(re, im) {
-  const N = re.length
-  let j = 0
-  for (let i = 1; i < N; i++) {
-    let bit = N >> 1
-    for (; j & bit; bit >>= 1) j ^= bit
-    j ^= bit
-    if (i < j) {
-      ;[re[i], re[j]] = [re[j], re[i]]
-      ;[im[i], im[j]] = [im[j], im[i]]
-    }
-  }
-  for (let len = 2; len <= N; len <<= 1) {
-    const half = len >> 1
-    const ang  = -2 * Math.PI / len
-    const wRe  = Math.cos(ang), wIm = Math.sin(ang)
-    for (let i = 0; i < N; i += len) {
-      let cRe = 1, cIm = 0
-      for (let k = 0; k < half; k++) {
-        const uRe = re[i+k], uIm = im[i+k]
-        const vRe = re[i+k+half]*cRe - im[i+k+half]*cIm
-        const vIm = re[i+k+half]*cIm + im[i+k+half]*cRe
-        re[i+k]      = uRe+vRe; im[i+k]      = uIm+vIm
-        re[i+k+half] = uRe-vRe; im[i+k+half] = uIm-vIm
-        const nRe = cRe*wRe - cIm*wIm; cIm = cRe*wIm + cIm*wRe; cRe = nRe
-      }
-    }
-  }
-}
-
-function singleChannelBandPowers(samples) {
-  const N  = FFT_SIZE
-  const re = new Float64Array(N)
-  const im = new Float64Array(N)
-  for (let i = 0; i < N; i++)
-    re[i] = samples[i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1))) // Hann window
-  fftInPlace(re, im)
-  const freqRes = SAMPLE_RATE / N
-  const sumBand = (lo, hi) => {
-    let s = 0, c = 0
-    for (let k = 1; k < N / 2; k++) {
-      const f = k * freqRes
-      if (f >= lo && f < hi) { s += re[k]*re[k] + im[k]*im[k]; c++ }
-    }
-    return c ? s / c : 0
-  }
-  return {
-    delta: sumBand(0.5, 4),
-    theta: sumBand(4,   8),
-    alpha: sumBand(8,  13),
-    beta:  sumBand(13, 30),
-  }
-}
-
-function computeBandPowers(eegBuf) {
-  const avg = { delta: 0, theta: 0, alpha: 0, beta: 0 }
-  let valid = 0
-  for (let ch = 0; ch < CHANNELS.length; ch++) {
-    const buf = eegBuf[ch]
-    if (!buf || buf.length < FFT_SIZE) continue
-    const samples = buf.slice(-FFT_SIZE).map(v => v * SCALE) // un-scale → µV
-    const bp = singleChannelBandPowers(samples)
-    Object.keys(avg).forEach(k => { avg[k] += bp[k] })
-    valid++
-  }
-  if (!valid) return null
-  Object.keys(avg).forEach(k => { avg[k] /= valid })
-  return avg
-}
-
-function bandPowersToRaw(bp) {
-  const eps = 1e-10
-  return {
-    relaxation: bp.alpha / (bp.beta + eps),               // alpha dominance → calm
-    focus:      bp.beta  / (bp.theta + eps),               // beta/theta engagement
-    stress:     (bp.beta + bp.theta) / (bp.alpha + eps),  // high beta+theta, low alpha
-  }
-}
-
-// Sigmoid: baseline mean → 50, 2× baseline → ~82, 0.5× → ~18
-function normalizeToScore(raw, means) {
-  const score = (v, m) => m ? clamp(100 / (1 + Math.exp(-2.5 * (v / m - 1))), 0, 100) : 50
-  return {
-    relaxation: score(raw.relaxation, means.relaxation),
-    focus:      score(raw.focus,      means.focus),
-    stress:     score(raw.stress,     means.stress),
-  }
-}
 
 // ── Simulation ───────────────────────────────────────────────────────────────
 function injectSimSamples(eegBuf, phaseRef) {
   for (let ch = 0; ch < CHANNELS.length; ch++) {
     const buf = eegBuf[ch]
     for (let i = 0; i < 10; i++) {
-      const t = (phaseRef.current + i) / SAMPLE_RATE
+      const t = (phaseRef.current + i) / 200
       buf.shift()
       buf.push(
         0.55 * Math.sin(2 * Math.PI * 10.5 * t + ch * 0.5) +
@@ -136,7 +44,6 @@ function simMetricsAt(t) {
 }
 
 // ── WaveformCanvas ───────────────────────────────────────────────────────────
-// Unchanged from friend's version — reads eegBuffer.current[channelIndex] on each frame
 function WaveformCanvas({ channelIndex, color, isRunning, eegBuffer }) {
   const canvasRef  = useRef(null)
   const animRef    = useRef(null)
@@ -152,7 +59,7 @@ function WaveformCanvas({ channelIndex, color, isRunning, eegBuffer }) {
       if (W !== canvas.width || H !== canvas.height) { canvas.width = W; canvas.height = H }
       ctx.clearRect(0, 0, W, H)
       ctx.strokeStyle = 'rgba(0,30,90,0.07)'; ctx.lineWidth = 1; ctx.setLineDash([4, 8])
-      ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke()
       ctx.setLineDash([])
       if (runningRef.current && eegBuffer.current[channelIndex]) {
         const data = eegBuffer.current[channelIndex]
@@ -165,7 +72,7 @@ function WaveformCanvas({ channelIndex, color, isRunning, eegBuffer }) {
         const maxAbs = data.reduce((m, v) => Math.max(m, Math.abs(v)), 0.001)
         const yScale = (H * 0.42) / maxAbs
         data.forEach((v, i) => {
-          const x = i * step, y = H/2 - v * yScale
+          const x = i * step, y = H / 2 - v * yScale
           i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
         })
         ctx.stroke(); ctx.shadowBlur = 0
@@ -229,8 +136,8 @@ function MetricsChart({ historyRef }) {
       ctx.textAlign = 'right'; ctx.fillText('5 min', W - 3, H - 3)
       const history = historyRef.current
       if (history.length >= 2) {
-        const xStep = W / (HISTORY_LEN - 1)
-        const xOff  = Math.max(0, HISTORY_LEN - history.length) * xStep
+        const xStep = W / (HISTORY_MAX - 1)
+        const xOff  = Math.max(0, HISTORY_MAX - history.length) * xStep
         Object.entries(METRIC_COLORS).forEach(([key, color]) => {
           ctx.beginPath(); ctx.strokeStyle = color + 'cc'; ctx.lineWidth = 1.5
           ctx.shadowColor = color; ctx.shadowBlur = 2
@@ -253,46 +160,47 @@ function MetricsChart({ historyRef }) {
 }
 
 function formatTime(s) {
-  return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`
+  return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 }
 
 // ── EEGPage ──────────────────────────────────────────────────────────────────
 export default function EEGPage() {
-
-  // ── Existing state & refs (preserved exactly from friend's version) ───────
   const navigate = useNavigate()
 
-  const [isRunning, setIsRunning] = useState(false)
-  const [elapsed,   setElapsed]   = useState(0)
+  const [isRunning,        setIsRunning]        = useState(false)
+  const [elapsed,          setElapsed]          = useState(0)
   const [connectionStatus, setConnectionStatus] = useState('Disconnected')
-  const socketRef          = useRef(null)
-  const timerRef           = useRef(null)
-  const sessionStartRef    = useRef(null)
-  const isRunningRef = useRef(false)
+  const [signalQuality,    setSignalQuality]    = useState('unknown')
+  const socketRef       = useRef(null)
+  const timerRef        = useRef(null)
+  const sessionStartRef = useRef(null)
+  const isRunningRef    = useRef(false)
   useEffect(() => { isRunningRef.current = isRunning }, [isRunning])
 
   const eegBuffer = useRef(
     Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
   )
 
-  // ── New state ─────────────────────────────────────────────────────────────
   const [simMode,       setSimMode]       = useState(false)
   const [metrics,       setMetrics]       = useState({ stress: 0, focus: 0, relaxation: 0 })
-  const [calibrating,   setCalibrating]   = useState(false)
   const [baselineReady, setBaselineReady] = useState(false)
   const [timeLeft,      setTimeLeft]      = useState(SESSION_SECS)
   const [timerDone,     setTimerDone]     = useState(false)
 
   const metricsHistoryRef  = useRef([])
+  // { stress: [], focus: [], relaxation: [] } — raw log-ratio samples during calibration
   const baselineSamplesRef = useRef({ stress: [], focus: [], relaxation: [] })
-  const baselineMeansRef   = useRef(null)
+  // { mean: { stress, focus, relaxation }, std: { ... } } — set after calibration
+  const baselineStatsRef   = useRef(null)
+  // EMA-smoothed metric values
+  const smoothedRef        = useRef({ stress: 50, focus: 50, relaxation: 50 })
   const simPhaseRef        = useRef(0)
   const simModeRef         = useRef(false)
   const elapsedRef         = useRef(0)
   useEffect(() => { simModeRef.current = simMode }, [simMode])
   useEffect(() => { elapsedRef.current = elapsed  }, [elapsed])
 
-  // ── WebSocket — manual connect via button ────────────────────────────────
+  // ── WebSocket ────────────────────────────────────────────────────────────
   const connectDevice = useCallback(() => {
     if (simMode) return
     if (socketRef.current) { socketRef.current.close(); socketRef.current = null }
@@ -300,22 +208,75 @@ export default function EEGPage() {
     const ws = new WebSocket('ws://localhost:8765')
     socketRef.current = ws
     ws.onopen  = () => setConnectionStatus('Connected')
-    ws.onclose = () => setConnectionStatus('Disconnected')
+    ws.onclose = () => { setConnectionStatus('Disconnected'); setSignalQuality('unknown') }
     ws.onerror = () => setConnectionStatus('Error')
     ws.onmessage = (event) => {
       if (!isRunningRef.current) return
       let parsed
       try { parsed = JSON.parse(event.data) } catch { return }
-      const incomingChannels = parsed.channels || parsed.eeg || []
+
+      // Always update waveform buffer with raw samples
+      const incomingChannels = parsed.channels || []
       incomingChannels.forEach((channelData, index) => {
         const buf = eegBuffer.current[index]
         if (!buf) return
-        channelData.forEach(rawValue => { buf.shift(); buf.push(rawValue / SCALE) })
+        channelData.forEach(v => { buf.shift(); buf.push(v / SCALE) })
       })
+
+      // Signal quality badge
+      const quality = parsed.signal_quality || 'unknown'
+      setSignalQuality(quality)
+
+      // Only process metrics when bridge has sent band powers (every 250ms)
+      if (!parsed.bands) return
+
+      const bands = parsed.bands
+      const eps   = 1e-10
+
+      // Log-ratio raw metrics from relative band powers
+      const raw = {
+        relaxation: Math.log(bands.alpha / (bands.beta  + eps)),
+        focus:      Math.log(bands.beta  / (bands.theta + eps)),
+        stress:     Math.log((bands.beta + bands.theta) / (bands.alpha + eps)),
+      }
+
+      if (!baselineStatsRef.current) {
+        // Accumulate baseline samples (4 samples/sec × 30s = 120 samples)
+        const s = baselineSamplesRef.current
+        s.stress.push(raw.stress); s.focus.push(raw.focus); s.relaxation.push(raw.relaxation)
+
+        if (s.stress.length >= BASELINE_SECS * 4) {
+          const mean = arr => arr.reduce((a, v) => a + v, 0) / arr.length
+          const std  = (arr, m) => Math.sqrt(arr.reduce((a, v) => a + (v - m) ** 2, 0) / arr.length)
+          const mu = { stress: mean(s.stress), focus: mean(s.focus), relaxation: mean(s.relaxation) }
+          const sg = {
+            stress:     std(s.stress, mu.stress),
+            focus:      std(s.focus,  mu.focus),
+            relaxation: std(s.relaxation, mu.relaxation),
+          }
+          baselineStatsRef.current = { mean: mu, std: sg }
+          setBaselineReady(true)
+        }
+        return
+      }
+
+      // Z-score → sigmoid (→ 0-100, baseline mean → 50) → EMA smooth
+      const { mean: mu, std: sg } = baselineStatsRef.current
+      const sigmoid = z => 100 / (1 + Math.exp(-z))
+      const prev    = smoothedRef.current
+      const next    = {}
+      Object.keys(raw).forEach(k => {
+        const z = (raw[k] - mu[k]) / (sg[k] + eps)
+        next[k] = EMA_ALPHA * sigmoid(z) + (1 - EMA_ALPHA) * prev[k]
+      })
+      smoothedRef.current = next
+      setMetrics({ ...next })
+      metricsHistoryRef.current.push({ ...next, t: elapsedRef.current })
+      if (metricsHistoryRef.current.length > HISTORY_MAX) metricsHistoryRef.current.shift()
     }
   }, [simMode])
 
-  // ── Timer (unchanged) ─────────────────────────────────────────────────────
+  // ── Elapsed timer ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (isRunning) {
       sessionStartRef.current = sessionStartRef.current || new Date().toISOString()
@@ -326,7 +287,7 @@ export default function EEGPage() {
     return () => clearInterval(timerRef.current)
   }, [isRunning])
 
-  // ── 15-min countdown ──────────────────────────────────────────────────────
+  // ── 15-min countdown (starts after baseline ready, or immediately in sim) ─
   useEffect(() => {
     if (!isRunning || (!baselineReady && !simMode) || timeLeft <= 0) return
     const id = setInterval(() => {
@@ -338,58 +299,42 @@ export default function EEGPage() {
     return () => clearInterval(id)
   }, [isRunning, baselineReady, simMode, timeLeft])
 
-  // ── Sim: inject fake EEG samples into eegBuffer every 50 ms ───────────────
+  // ── Sim: inject fake EEG samples every 50ms ───────────────────────────────
   useEffect(() => {
     if (!simMode || !isRunning) return
     const id = setInterval(() => injectSimSamples(eegBuffer.current, simPhaseRef), 50)
     return () => clearInterval(id)
   }, [simMode, isRunning])
 
-  // ── Metrics: compute band powers + update history every 1 s ───────────────
+  // ── Sim: generate fake metrics at 250ms ──────────────────────────────────
   useEffect(() => {
-    if (!isRunning) return
+    if (!simMode || !isRunning) return
     const id = setInterval(() => {
-      let m
-      if (simModeRef.current) {
-        m = simMetricsAt(elapsedRef.current)
-      } else {
-        const bp = computeBandPowers(eegBuffer.current)
-        if (!bp) return
-        const raw = bandPowersToRaw(bp)
-        if (!baselineMeansRef.current) {
-          const s = baselineSamplesRef.current
-          s.stress.push(raw.stress); s.focus.push(raw.focus); s.relaxation.push(raw.relaxation)
-          setCalibrating(true)
-          if (elapsedRef.current >= BASELINE_SECS && s.stress.length >= 5) {
-            const mean = arr => arr.reduce((a, v) => a + v, 0) / arr.length
-            baselineMeansRef.current = { stress: mean(s.stress), focus: mean(s.focus), relaxation: mean(s.relaxation) }
-            setBaselineReady(true); setCalibrating(false)
-          }
-        }
-        m = baselineMeansRef.current
-          ? normalizeToScore(raw, baselineMeansRef.current)
-          : { stress: 50, focus: 50, relaxation: 50 }
-      }
+      const m = simMetricsAt(elapsedRef.current)
+      smoothedRef.current = m
       setMetrics(m)
       metricsHistoryRef.current.push({ ...m, t: elapsedRef.current })
-      if (metricsHistoryRef.current.length > HISTORY_LEN) metricsHistoryRef.current.shift()
-    }, 1000)
+      if (metricsHistoryRef.current.length > HISTORY_MAX) metricsHistoryRef.current.shift()
+    }, 250)
     return () => clearInterval(id)
-  }, [isRunning])
+  }, [simMode, isRunning])
 
+  // ── Navigate to summary ───────────────────────────────────────────────────
   const goToSummary = useCallback(() => {
     const sessionData = {
       history:   [...metricsHistoryRef.current],
       elapsed:   elapsedRef.current,
       startTime: sessionStartRef.current,
     }
-    eegBuffer.current = Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
-    metricsHistoryRef.current = []; simPhaseRef.current = 0
-    baselineSamplesRef.current = { stress: [], focus: [], relaxation: [] }
-    baselineMeansRef.current = null; sessionStartRef.current = null
+    eegBuffer.current           = Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
+    metricsHistoryRef.current   = []; simPhaseRef.current = 0
+    baselineSamplesRef.current  = { stress: [], focus: [], relaxation: [] }
+    baselineStatsRef.current    = null
+    smoothedRef.current         = { stress: 50, focus: 50, relaxation: 50 }
+    sessionStartRef.current     = null
     setIsRunning(false); setElapsed(0)
     setTimeLeft(SESSION_SECS); setTimerDone(false)
-    setBaselineReady(false); setCalibrating(false)
+    setBaselineReady(false)
     setMetrics({ stress: 0, focus: 0, relaxation: 0 })
     navigate('/summary', { state: sessionData })
   }, [navigate])
@@ -398,27 +343,26 @@ export default function EEGPage() {
     if (metricsHistoryRef.current.length > 0) {
       goToSummary()
     } else {
+      eegBuffer.current          = Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
+      metricsHistoryRef.current  = []; simPhaseRef.current = 0
+      baselineSamplesRef.current = { stress: [], focus: [], relaxation: [] }
+      baselineStatsRef.current   = null
+      smoothedRef.current        = { stress: 50, focus: 50, relaxation: 50 }
       setIsRunning(false); setElapsed(0)
       setTimeLeft(SESSION_SECS); setTimerDone(false)
-      eegBuffer.current = Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
-      metricsHistoryRef.current = []; simPhaseRef.current = 0
-      baselineSamplesRef.current = { stress: [], focus: [], relaxation: [] }
-      baselineMeansRef.current = null
-      setBaselineReady(false); setCalibrating(false)
+      setBaselineReady(false)
       setMetrics({ stress: 0, focus: 0, relaxation: 0 })
     }
   }
 
-  useEffect(() => {
-    if (timerDone) goToSummary()
-  }, [timerDone, goToSummary])
+  useEffect(() => { if (timerDone) goToSummary() }, [timerDone, goToSummary])
 
   const recalibrate = () => {
     baselineSamplesRef.current = { stress: [], focus: [], relaxation: [] }
-    baselineMeansRef.current = null
-    setBaselineReady(false); setCalibrating(false)
+    baselineStatsRef.current   = null
+    smoothedRef.current        = { stress: 50, focus: 50, relaxation: 50 }
+    setBaselineReady(false)
   }
-
 
   const isLive = simMode || connectionStatus === 'Connected'
 
@@ -457,11 +401,21 @@ export default function EEGPage() {
             </button>
           )}
 
-          {/* Device status */}
+          {/* Signal quality badge */}
+          {!simMode && connectionStatus === 'Connected' && (
+            <div className="flex items-center gap-2" style={{ padding: '4px 10px', borderRadius: 999, background: signalQuality === 'good' ? 'rgba(5,150,105,0.08)' : 'rgba(245,158,11,0.1)', border: `1px solid ${signalQuality === 'good' ? 'rgba(5,150,105,0.25)' : 'rgba(161,120,0,0.25)'}` }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: signalQuality === 'good' ? '#059669' : '#f59e0b' }} />
+              <span style={{ fontSize: 10, color: signalQuality === 'good' ? '#065f46' : '#7a5200' }}>
+                {signalQuality === 'good' ? 'Good Signal' : 'Poor Signal'}
+              </span>
+            </div>
+          )}
+
+          {/* Connection status */}
           <div className="flex items-center gap-2" style={{ padding: '5px 14px', borderRadius: 999, background: isLive ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.07)', border: `1px solid ${isLive ? 'rgba(5,150,105,0.25)' : 'rgba(220,38,38,0.2)'}` }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', display: 'inline-block', background: isLive ? '#059669' : '#dc2626', boxShadow: `0 0 5px ${isLive ? 'rgba(5,150,105,0.6)' : 'rgba(220,38,38,0.6)'}` }} />
             <span style={{ fontSize: 11, color: isLive ? '#065f46' : '#991b1b' }}>
-              {connectionStatus}
+              {simMode ? 'Sim Active' : connectionStatus}
             </span>
           </div>
 
@@ -502,10 +456,10 @@ export default function EEGPage() {
           </div>
         </div>
 
-        {/* Right — Insights (FFT) */}
+        {/* Right — Insights */}
         <div className="flex flex-col overflow-hidden" style={{ width: '45%', padding: '14px 18px' }}>
           <div className="flex items-center gap-3" style={{ marginBottom: 10 }}>
-            <span style={{ fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: 'rgba(15,30,65,0.38)' }}>Insights (FFT)</span>
+            <span style={{ fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: 'rgba(15,30,65,0.38)' }}>Insights</span>
             <div style={{ flex: 1, height: 1, background: 'rgba(70,130,200,0.15)' }} />
             {isRunning && !simMode && (
               <button onClick={recalibrate} style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '3px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(70,130,200,0.2)', color: 'rgba(15,30,65,0.45)', cursor: 'pointer' }}>
@@ -545,8 +499,13 @@ export default function EEGPage() {
             <MetricBar label="Relaxation" value={isRunning ? metrics.relaxation : 0} color="#059669" />
           </div>
 
-          {/* Calibrating notice */}
-          {calibrating && (
+          {/* Status notices */}
+          {isRunning && !simMode && !baselineReady && connectionStatus !== 'Connected' && (
+            <div style={{ marginBottom: 10, padding: '6px 12px', borderRadius: 8, background: 'rgba(70,130,200,0.08)', border: '1px solid rgba(70,130,200,0.2)' }}>
+              <span style={{ fontSize: 10, color: 'rgba(15,30,65,0.55)' }}>Connect device to begin calibration</span>
+            </div>
+          )}
+          {isRunning && !simMode && !baselineReady && connectionStatus === 'Connected' && (
             <div style={{ marginBottom: 10, padding: '6px 12px', borderRadius: 8, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(161,120,0,0.2)' }}>
               <span style={{ fontSize: 10, color: '#7a5200' }}>
                 Calibrating baseline — {Math.max(0, BASELINE_SECS - elapsed)}s remaining
@@ -571,14 +530,6 @@ export default function EEGPage() {
           </div>
         </div>
       </div>
-
-      {/* Ambient audio */}
-      <iframe
-        src="https://www.youtube.com/embed/JbJ0sYt9Nyk?autoplay=1&loop=1&playlist=JbJ0sYt9Nyk&controls=0"
-        style={{ position: 'absolute', width: 0, height: 0, border: 'none', opacity: 0, pointerEvents: 'none' }}
-        allow="autoplay; encrypted-media"
-        title="ambient-audio"
-      />
 
       {/* ── Bottom bar ── */}
       <div className="flex-shrink-0 flex items-center justify-end px-6 py-2.5"

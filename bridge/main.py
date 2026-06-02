@@ -12,13 +12,70 @@ import asyncio
 import json
 import argparse
 import time
+import collections
 
+import numpy as np
 import websockets
 
-WS_PORT = 8765
-CHUNK_INTERVAL = 0.05   # seconds between sends (~50 ms)
+WS_PORT         = 8765
+CHUNK_INTERVAL  = 0.05    # seconds between raw sends (~50 ms)
+BAND_INTERVAL   = 0.25    # seconds between band-power computation (250 ms)
+WINDOW_SECS     = 2.0     # rolling window for band powers
+SAMPLE_RATE     = 200     # Hz (Ganglion)
+ARTIFACT_THRESH = 150.0   # µV peak-to-peak — marks signal as artefact
+FLAT_THRESH     = 0.5     # µV — signal considered flat/disconnected
+N_CHANNELS      = 4
 
 CLIENTS: set = set()
+
+
+class BandPowerEngine:
+    """Rolling buffer + BrainFlow band-power computation."""
+
+    def __init__(self, n_channels: int, sample_rate: int, window_secs: float):
+        self.n_channels  = n_channels
+        self.sample_rate = sample_rate
+        self.window_size = int(window_secs * sample_rate)
+        self.buffers = [collections.deque(maxlen=self.window_size) for _ in range(n_channels)]
+
+    def push(self, channels_data):
+        """channels_data: list[list], shape [n_channels][n_samples_in_chunk]"""
+        for ch, samples in enumerate(channels_data):
+            if ch < self.n_channels:
+                self.buffers[ch].extend(samples)
+
+    def _quality(self) -> str:
+        for buf in self.buffers:
+            if len(buf) < self.window_size // 2:
+                return 'poor'
+            arr = np.asarray(buf, dtype=np.float64)
+            pp = float(arr.max() - arr.min())
+            if pp > ARTIFACT_THRESH or pp < FLAT_THRESH:
+                return 'poor'
+        return 'good'
+
+    def compute(self, apply_filters: bool):
+        """Return (bands_dict, quality_str). bands_dict is None on poor quality."""
+        from brainflow.data_filter import DataFilter
+        quality = self._quality()
+        if quality == 'poor':
+            return None, 'poor'
+        data = np.array([list(b) for b in self.buffers], dtype=np.float64)
+        try:
+            avg, _ = DataFilter.get_avg_band_powers(
+                data.copy(), list(range(self.n_channels)), self.sample_rate, apply_filters
+            )
+            # avg order: [delta, theta, alpha, beta, gamma]
+            total = float(np.sum(avg)) + 1e-10
+            return {
+                'delta': float(avg[0] / total),
+                'theta': float(avg[1] / total),
+                'alpha': float(avg[2] / total),
+                'beta':  float(avg[3] / total),
+                'gamma': float(avg[4] / total),
+            }, 'good'
+        except Exception:
+            return None, 'poor'
 
 
 # ── LSL mode ───────────────────────────────────────────────────────────────
@@ -27,42 +84,56 @@ async def broadcast_loop_lsl():
 
     print("Searching for any LSL stream...")
     all_streams = resolve_streams(wait_time=5.0)
-
     if not all_streams:
-        print("[ERROR] No LSL streams found at all.")
+        print("[ERROR] No LSL streams found.")
         print("  • In OpenBCI GUI → Networking → LSL → TimeSeries → Start LSL Stream")
         return
 
     print(f"Found {len(all_streams)} stream(s):")
     for s in all_streams:
-        print(f"  • name={s.name()}  type={s.type()}  channels={s.channel_count()}")
+        print(f"  • {s.name()}  type={s.type()}  channels={s.channel_count()}")
 
-    # Use the first stream regardless of type
     inlet = StreamInlet(all_streams[0])
     info  = inlet.info()
-    print(f"\nUsing: {info.name()}  |  {info.channel_count()} channels  |  {info.nominal_srate():.0f} Hz")
-    print(f"WebSocket server →  ws://localhost:{WS_PORT}\n")
+    n_ch  = info.channel_count()
+    print(f"\nUsing: {info.name()}  |  {n_ch} channels  |  {info.nominal_srate():.0f} Hz")
+    print(f"WebSocket server → ws://localhost:{WS_PORT}\n")
+
+    engine         = BandPowerEngine(min(n_ch, N_CHANNELS), SAMPLE_RATE, WINDOW_SECS)
+    last_band_t    = 0.0
+    cached_bands   = None
+    cached_quality = 'poor'
 
     while True:
-        # pull_chunk returns (samples, timestamps)
-        # samples shape: list of [ch1, ch2, ch3, ch4] per sample
+        # pull_chunk: samples shape = list of [ch0, ch1, ...] per sample
         samples, _ = inlet.pull_chunk(timeout=0.0, max_samples=64)
-
-        if samples and CLIENTS:
-            # Transpose: [[s0_ch0, s0_ch1,...], [s1_ch0,...]] → [[ch0_s0,ch0_s1,...], [ch1_s0,...]]
+        if samples:
+            # Transpose: per-sample rows → per-channel lists
             channels = [list(col) for col in zip(*samples)]
-            websockets.broadcast(CLIENTS, json.dumps({
-                "type": "eeg",
-                "channels": channels,
-                "timestamp": time.time(),
-            }))
+            engine.push(channels)
+
+            now = time.time()
+            if now - last_band_t >= BAND_INTERVAL:
+                # LSL stream is already filtered by OpenBCI GUI
+                cached_bands, cached_quality = engine.compute(apply_filters=False)
+                last_band_t = now
+
+            if CLIENTS:
+                msg = {
+                    'type':           'eeg',
+                    'channels':       channels,
+                    'signal_quality': cached_quality,
+                    'timestamp':      time.time(),
+                }
+                if cached_bands is not None:
+                    msg['bands'] = cached_bands
+                websockets.broadcast(CLIENTS, json.dumps(msg))
 
         await asyncio.sleep(CHUNK_INTERVAL)
 
 
-# ── Brainflow mode (direct or demo) ───────────────────────────────────────
+# ── BrainFlow mode (direct or demo) ───────────────────────────────────────
 async def broadcast_loop_brainflow(serial_port: str, demo: bool):
-    import numpy as np
     from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 
     BoardShim.disable_board_logger()
@@ -75,13 +146,12 @@ async def broadcast_loop_brainflow(serial_port: str, demo: bool):
         params.serial_port = serial_port
 
     board = BoardShim(board_id, params)
-
     try:
         board.prepare_session()
     except Exception as e:
         print(f"\n[ERROR] Could not connect to board: {e}")
-        print("  • Close the OpenBCI GUI first, then try again")
-        print("  • Or run with --lsl to read from the OpenBCI GUI instead")
+        print("  • Close OpenBCI GUI first, then try again")
+        print("  • Or run with --lsl to read from OpenBCI GUI")
         print("  • Or run with --demo to use synthetic data")
         return
 
@@ -89,21 +159,42 @@ async def broadcast_loop_brainflow(serial_port: str, demo: bool):
     eeg_channels = BoardShim.get_eeg_channels(board_id)
     sample_rate  = BoardShim.get_sampling_rate(board_id)
 
-    print(f"{'[DEMO] ' if demo else ''}Ganglion streaming at {sample_rate} Hz")
-    print(f"WebSocket server →  ws://localhost:{WS_PORT}\n")
+    print(f"{'[DEMO] ' if demo else ''}Streaming at {sample_rate} Hz")
+    print(f"WebSocket server → ws://localhost:{WS_PORT}\n")
 
-    while True:
-        data = board.get_board_data()
-        if data.shape[1] > 0 and CLIENTS:
-            websockets.broadcast(CLIENTS, json.dumps({
-                "type": "eeg",
-                "channels": data[eeg_channels, :].tolist(),
-                "timestamp": time.time(),
-            }))
-        await asyncio.sleep(CHUNK_INTERVAL)
+    engine         = BandPowerEngine(len(eeg_channels), sample_rate, WINDOW_SECS)
+    last_band_t    = 0.0
+    cached_bands   = None
+    cached_quality = 'poor'
 
-    board.stop_stream()
-    board.release_session()
+    try:
+        while True:
+            data = board.get_board_data()
+            if data.shape[1] > 0:
+                eeg = data[eeg_channels, :]  # shape (n_eeg, n_samples)
+                engine.push(eeg.tolist())
+
+                now = time.time()
+                if now - last_band_t >= BAND_INTERVAL:
+                    # Direct board data is raw — apply BrainFlow filters
+                    cached_bands, cached_quality = engine.compute(apply_filters=True)
+                    last_band_t = now
+
+                if CLIENTS:
+                    msg = {
+                        'type':           'eeg',
+                        'channels':       eeg.tolist(),
+                        'signal_quality': cached_quality,
+                        'timestamp':      time.time(),
+                    }
+                    if cached_bands is not None:
+                        msg['bands'] = cached_bands
+                    websockets.broadcast(CLIENTS, json.dumps(msg))
+
+            await asyncio.sleep(CHUNK_INTERVAL)
+    finally:
+        board.stop_stream()
+        board.release_session()
 
 
 # ── WebSocket handler ──────────────────────────────────────────────────────
@@ -131,9 +222,9 @@ async def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OpenBCI Ganglion → WebSocket bridge")
     parser.add_argument("--lsl",  action="store_true", help="Read from OpenBCI GUI LSL stream")
-    parser.add_argument("--demo", action="store_true", help="Synthetic data — no hardware needed")
+    parser.add_argument("--demo", action="store_true", help="Synthetic data — no hardware")
     parser.add_argument("--port", default="/dev/tty.usbmodem11",
-                        help="Serial port for direct brainflow connection")
+                        help="Serial port for direct BrainFlow connection")
     args = parser.parse_args()
 
     try:
