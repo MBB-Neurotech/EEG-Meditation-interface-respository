@@ -83,14 +83,14 @@ const CARDS = [
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>),
     title: "What We Don't Keep",
-    body: 'No personal identifiers, medical records, academic information, or device files are retained. Your data is not saved or archived.',
+    body: 'No personal identifiers or device files are saved or archived.',
   },
   {
     icon: (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>),
     title: 'Your Control',
-    body: 'Sessions are ephemeral. When you finish, all live metrics disappear and conversation context is cleared. You control what you share.',
+    body: 'When you finish, all live metrics disappear and conversation context is cleared. You control what you share.',
   },
 ]
 

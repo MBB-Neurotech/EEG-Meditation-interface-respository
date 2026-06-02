@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 
 function DustCanvas() {
   const canvasRef = useRef(null)
@@ -81,19 +82,23 @@ export default function Slide4Meditation() {
       <div className="relative z-10 flex flex-col items-center gap-6 px-10 w-full max-w-2xl">
         <div className="flex flex-col items-center gap-4 text-center">
           {/* Play icon */}
-          <div className="w-16 h-16 rounded-full flex items-center justify-center"
+          <Link to="/data" className="flex items-center gap-4 px-10 py-5 rounded-full transition-all duration-200 hover:scale-105"
             style={{
               background: 'rgba(255,255,255,0.92)',
               boxShadow: '0 6px 32px rgba(90,130,220,0.22), 0 2px 8px rgba(0,0,0,0.06)',
+              textDecoration: 'none',
             }}>
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"
               style={{ color: '#4572c8' }}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.4}
                 d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.4}
                 d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-          </div>
+            <span className="font-sans font-medium tracking-wide" style={{ color: '#4572c8', fontSize: '20px' }}>
+              Start Session
+            </span>
+          </Link>
           <div>
             <h1 className="font-serif font-light mb-2"
               style={{ fontSize: 'clamp(2.8rem, 6vw, 4.4rem)', color: '#263a52', letterSpacing: '-0.015em' }}>
