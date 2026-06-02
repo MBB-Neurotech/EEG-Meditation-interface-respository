@@ -1,7 +1,4 @@
-# IMPORTANT: This version natively uses bluetooth with no OpenBCI GUI required nor the dongle required.
-Rather than using the **npm run dev** command, use **npm start** to run the app
-
-# Running the app
+# Running the App
 If not done already, follow the instructions here to download the code: [EEG Meditation Team Guide](https://docs.google.com/document/d/1osU8i9ZI_V6nUZUVps4638OfmPaFP3pMxIYc97aGRQE/edit?tab=t.0)
 
 Next, in the VS Code terminal (If not open, select Terminal in the top bar on a Mac, and select New Terminal) type this command: **npm install**
@@ -9,6 +6,14 @@ Next, in the VS Code terminal (If not open, select Terminal in the top bar on a 
 
 Finally, enter this command: **npm run dev**
 - This command will produce a localhost link (meaning that it's only accessible on your computer) that will run the app
+
+With the app open, you need to stream the data.
+
+# Streaming the Data
+1. Open the OpenBCI GUI
+2. Connect the Ganglion headset in the GUI
+3. In the GUI, start the session and navigate in the following way: Networking --> LSL --> TimeSeries --> Start LSL Stream
+4. In a terminal run: **python3 bridge/main.py --lsl**
 
 # React + Vite
 
