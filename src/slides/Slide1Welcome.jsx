@@ -95,8 +95,8 @@ export default function Slide1Welcome() {
             textShadow: '0 2px 40px rgba(0,0,0,0.6)',
             letterSpacing: '-0.01em',
           }}>
-          MBB Neurotech<br />
-          <span style={{ color: 'rgba(140, 200, 255, 0.9)' }}>Meditation Project</span>
+          Neuroflow:<br />
+          <span style={{ color: 'rgba(140, 200, 255, 0.9)' }}>Meditation App</span>
         </h1>
         <div className="w-12 h-px mt-2" style={{ background: 'rgba(160,210,255,0.35)' }} />
       </div>
