@@ -1,3 +1,6 @@
+# IMPORTANT: This version natively uses bluetooth with no OpenBCI GUI required nor the dongle required.
+Rather than using the **npm run dev** command, use **npm start** to run the app
+
 # Running the app
 If not done already, follow the instructions here to download the code: [EEG Meditation Team Guide](https://docs.google.com/document/d/1osU8i9ZI_V6nUZUVps4638OfmPaFP3pMxIYc97aGRQE/edit?tab=t.0)
 
