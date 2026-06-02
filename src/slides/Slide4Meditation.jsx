@@ -109,26 +109,6 @@ export default function Slide4Meditation() {
             </p>
           </div>
         </div>
-
-        {/* Video placeholder */}
-        <div className="w-full max-w-xl rounded-2xl overflow-hidden"
-          style={{
-            background: 'rgba(255,255,255,0.78)',
-            backdropFilter: 'blur(14px)',
-            boxShadow: '0 8px 48px rgba(75,110,185,0.13), 0 2px 12px rgba(0,0,0,0.06)',
-            border: '1px solid rgba(150,185,235,0.35)',
-          }}>
-          <div className="relative" style={{ paddingBottom: '56.25%' }}>
-            <iframe
-              className="absolute inset-0 w-full h-full"
-              src="https://www.youtube.com/embed/UkOISzx-mjE"
-              title="Guided Meditation"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-        </div>
       </div>
     </div>
   )

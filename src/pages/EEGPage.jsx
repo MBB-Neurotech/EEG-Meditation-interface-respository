@@ -14,7 +14,8 @@ const SCALE          = 50    // µV divisor — matches friend's server.py
 const SAMPLE_RATE    = 200   // Hz
 const FFT_SIZE       = 256   // must be power of 2
 const HISTORY_LEN    = 300   // 5 min at 1 pt/sec
-const BASELINE_SECS  = 30    // seconds to collect baseline
+const BASELINE_SECS  = 120   // seconds to collect baseline (2 min)
+const SESSION_SECS   = 15 * 60
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
@@ -277,6 +278,8 @@ export default function EEGPage() {
   const [metrics,       setMetrics]       = useState({ stress: 0, focus: 0, relaxation: 0 })
   const [calibrating,   setCalibrating]   = useState(false)
   const [baselineReady, setBaselineReady] = useState(false)
+  const [timeLeft,      setTimeLeft]      = useState(SESSION_SECS)
+  const [timerDone,     setTimerDone]     = useState(false)
 
   const metricsHistoryRef  = useRef([])
   const baselineSamplesRef = useRef({ stress: [], focus: [], relaxation: [] })
@@ -320,6 +323,18 @@ export default function EEGPage() {
     return () => clearInterval(timerRef.current)
   }, [isRunning])
 
+  // ── 15-min countdown ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isRunning || (!baselineReady && !simMode) || timeLeft <= 0) return
+    const id = setInterval(() => {
+      setTimeLeft(t => {
+        if (t <= 1) { setTimerDone(true); return 0 }
+        return t - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [isRunning, baselineReady, simMode, timeLeft])
+
   // ── Sim: inject fake EEG samples into eegBuffer every 50 ms ───────────────
   useEffect(() => {
     if (!simMode || !isRunning) return
@@ -361,6 +376,7 @@ export default function EEGPage() {
 
   const handleStop = () => {
     setIsRunning(false); setElapsed(0)
+    setTimeLeft(SESSION_SECS); setTimerDone(false)
     eegBuffer.current = Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
     metricsHistoryRef.current = []; simPhaseRef.current = 0
     baselineSamplesRef.current = { stress: [], focus: [], relaxation: [] }
@@ -459,6 +475,30 @@ export default function EEGPage() {
                 Recalibrate
               </button>
             )}
+          </div>
+
+          {/* 15-min countdown ring */}
+          <div className="flex flex-col items-center" style={{ marginBottom: 14 }}>
+            <div style={{ position: 'relative', width: 110, height: 110 }}>
+              <svg width="110" height="110" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="55" cy="55" r="46" fill="none" stroke="rgba(70,130,200,0.12)" strokeWidth="5" />
+                <circle cx="55" cy="55" r="46" fill="none"
+                  stroke={timerDone ? '#dc2626' : timeLeft < 60 ? '#f59e0b' : '#059669'}
+                  strokeWidth="5" strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 46}`}
+                  strokeDashoffset={`${2 * Math.PI * 46 * (1 - timeLeft / SESSION_SECS)}`}
+                  style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.5s' }}
+                />
+              </svg>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 20, fontVariantNumeric: 'tabular-nums', fontWeight: 500, color: timerDone ? '#dc2626' : 'rgba(15,30,65,0.8)', lineHeight: 1 }}>
+                  {timerDone ? 'Done' : formatTime(timeLeft)}
+                </span>
+                <span style={{ fontSize: 8, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(15,30,65,0.35)', marginTop: 3 }}>
+                  {timerDone ? 'session complete' : 'remaining'}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Metric bars */}
