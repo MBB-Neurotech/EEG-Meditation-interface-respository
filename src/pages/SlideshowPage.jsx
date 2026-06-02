@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import Slide1Welcome from '../slides/Slide1Welcome'
 import Slide2Privacy from '../slides/Slide2Privacy'
 import Slide3Instructions from '../slides/Slide3Instructions'
@@ -63,53 +62,8 @@ export default function SlideshowPage() {
         <CurrentSlide />
       </div>
 
-      {/* ── Top-right: Data button + counter ── */}
+      {/* ── Top-right: counter ── */}
       <div className="absolute top-5 right-6 z-50 flex items-center gap-5">
-
-        {/* Large rectangle EEG Data button */}
-        <Link
-          to="/data"
-          className="flex items-center gap-3"
-          style={{
-            padding: '14px 28px',
-            borderRadius: '12px',
-            background: isLight
-              ? 'rgba(255,255,255,0.82)'
-              : 'rgba(70,115,255,0.22)',
-            backdropFilter: 'blur(16px)',
-            border: isLight
-              ? '1.5px solid rgba(90,130,210,0.45)'
-              : '1.5px solid rgba(130,175,255,0.5)',
-            boxShadow: isLight
-              ? '0 4px 20px rgba(70,110,200,0.18)'
-              : '0 4px 24px rgba(70,110,255,0.32)',
-            transition: 'all 0.25s ease',
-            textDecoration: 'none',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.96)' : 'rgba(80,130,255,0.34)'
-            e.currentTarget.style.boxShadow = isLight ? '0 6px 28px rgba(70,110,200,0.28)' : '0 6px 32px rgba(70,110,255,0.48)'
-            e.currentTarget.style.transform = 'translateY(-1px)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.82)' : 'rgba(70,115,255,0.22)'
-            e.currentTarget.style.boxShadow = isLight ? '0 4px 20px rgba(70,110,200,0.18)' : '0 4px 24px rgba(70,110,255,0.32)'
-            e.currentTarget.style.transform = 'translateY(0)'
-          }}
-        >
-          {/* Wave icon */}
-          <svg width="22" height="14" viewBox="0 0 36 18" fill="none"
-            style={{ color: isLight ? '#4a6fbe' : 'rgba(190,215,255,0.95)', flexShrink: 0 }}>
-            <path d="M2 9 Q6 2 11 9 Q16 16 21 9 Q26 2 31 9 Q33 12 35 9"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-          </svg>
-          <span className="font-sans font-semibold tracking-[0.1em] uppercase"
-            style={{ fontSize: '13px', color: isLight ? '#3a5fa0' : 'rgba(215,230,255,0.97)' }}>
-            EEG Data
-          </span>
-        </Link>
-
-        {/* Slide counter */}
         <span className="font-sans text-sm tabular-nums tracking-widest font-light"
           style={{ color: isLight ? 'rgba(70,90,120,0.55)' : 'rgba(255,255,255,0.38)' }}>
           {current + 1}&thinsp;/&thinsp;{TOTAL}
