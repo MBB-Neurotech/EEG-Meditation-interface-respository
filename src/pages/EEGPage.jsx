@@ -391,6 +391,7 @@ export default function EEGPage() {
     setBaselineReady(false); setCalibrating(false)
   }
 
+
   const isLive = simMode || connectionStatus === 'Connected'
 
   return (
@@ -534,6 +535,14 @@ export default function EEGPage() {
           </div>
         </div>
       </div>
+
+      {/* Ambient audio */}
+      <iframe
+        src="https://www.youtube.com/embed/JbJ0sYt9Nyk?autoplay=1&loop=1&playlist=JbJ0sYt9Nyk&controls=0"
+        style={{ position: 'absolute', width: 0, height: 0, border: 'none', opacity: 0, pointerEvents: 'none' }}
+        allow="autoplay; encrypted-media"
+        title="ambient-audio"
+      />
 
       {/* ── Bottom bar ── */}
       <div className="flex-shrink-0 flex items-center justify-end px-6 py-2.5"
