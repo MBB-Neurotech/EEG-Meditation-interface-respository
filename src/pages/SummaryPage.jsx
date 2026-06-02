@@ -224,7 +224,7 @@ export default function SummaryPage() {
   const btnGreen = { ...btnBase, fontWeight: 500, background: 'rgba(5,150,105,0.1)', border: '1px solid rgba(5,150,105,0.3)', color: '#065f46' }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(150deg,#eaf3fc 0%,#dce8f7 55%,#e5eef8 100%)', color: '#0f1e3d', fontFamily: "'Outfit', system-ui, sans-serif", overflowY: 'auto' }}>
+    <div style={{ height: '100vh', background: 'linear-gradient(150deg,#eaf3fc 0%,#dce8f7 55%,#e5eef8 100%)', color: '#0f1e3d', fontFamily: "'Outfit', system-ui, sans-serif", overflowY: 'auto' }}>
 
       {/* ── Sticky header ── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 28px', borderBottom: '1px solid rgba(70,130,200,0.15)', background: 'rgba(234,243,252,0.97)', backdropFilter: 'blur(12px)' }}>
