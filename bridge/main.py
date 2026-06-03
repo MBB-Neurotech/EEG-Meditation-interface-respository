@@ -55,11 +55,11 @@ class BandPowerEngine:
         return 'good'
 
     def compute(self, apply_filters: bool):
-        """Return (bands_dict, quality_str). bands_dict is None on poor quality."""
+        """Return (bands_dict, quality_str). bands_dict is None only when buffer is too short."""
         from brainflow.data_filter import DataFilter
         quality = self._quality()
-        if quality == 'poor':
-            return None, 'poor'
+        if any(len(buf) < self.window_size // 2 for buf in self.buffers):
+            return None, quality
         data = np.array([list(b) for b in self.buffers], dtype=np.float64)
         try:
             avg, _ = DataFilter.get_avg_band_powers(
@@ -73,9 +73,9 @@ class BandPowerEngine:
                 'alpha': float(avg[2] / total),
                 'beta':  float(avg[3] / total),
                 'gamma': float(avg[4] / total),
-            }, 'good'
+            }, quality
         except Exception:
-            return None, 'poor'
+            return None, quality
 
 
 # ── LSL mode ───────────────────────────────────────────────────────────────
@@ -96,10 +96,11 @@ async def broadcast_loop_lsl():
     inlet = StreamInlet(all_streams[0])
     info  = inlet.info()
     n_ch  = info.channel_count()
-    print(f"\nUsing: {info.name()}  |  {n_ch} channels  |  {info.nominal_srate():.0f} Hz")
+    lsl_rate = max(1, int(info.nominal_srate())) or SAMPLE_RATE
+    print(f"\nUsing: {info.name()}  |  {n_ch} channels  |  {lsl_rate} Hz")
     print(f"WebSocket server → ws://localhost:{WS_PORT}\n")
 
-    engine         = BandPowerEngine(min(n_ch, N_CHANNELS), SAMPLE_RATE, WINDOW_SECS)
+    engine         = BandPowerEngine(min(n_ch, N_CHANNELS), lsl_rate, WINDOW_SECS)
     last_band_t    = 0.0
     cached_bands   = None
     cached_quality = 'poor'

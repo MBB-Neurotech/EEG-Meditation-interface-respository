@@ -183,11 +183,12 @@ export default function EEGPage() {
     Array.from({ length: CHANNELS.length }, () => new Array(BUFFER_SIZE).fill(0))
   )
 
-  const [simMode,       setSimMode]       = useState(false)
-  const [metrics,       setMetrics]       = useState({ stress: 0, focus: 0, relaxation: 0 })
-  const [baselineReady, setBaselineReady] = useState(false)
-  const [timeLeft,      setTimeLeft]      = useState(SESSION_SECS)
-  const [timerDone,     setTimerDone]     = useState(false)
+  const [simMode,            setSimMode]            = useState(false)
+  const [metrics,            setMetrics]            = useState({ stress: 0, focus: 0, relaxation: 0 })
+  const [baselineReady,      setBaselineReady]      = useState(false)
+  const [baselineSampleCount, setBaselineSampleCount] = useState(0)
+  const [timeLeft,           setTimeLeft]           = useState(SESSION_SECS)
+  const [timerDone,          setTimerDone]          = useState(false)
 
   const metricsHistoryRef  = useRef([])
   // { stress: [], focus: [], relaxation: [] } — raw log-ratio samples during calibration
@@ -246,6 +247,7 @@ export default function EEGPage() {
         // Accumulate baseline samples (4 samples/sec × 30s = 120 samples)
         const s = baselineSamplesRef.current
         s.stress.push(raw.stress); s.focus.push(raw.focus); s.relaxation.push(raw.relaxation)
+        setBaselineSampleCount(s.stress.length)
 
         if (s.stress.length >= BASELINE_SECS * 4) {
           const mean = arr => arr.reduce((a, v) => a + v, 0) / arr.length
@@ -336,7 +338,7 @@ export default function EEGPage() {
     sessionStartRef.current     = null
     setIsRunning(false); setElapsed(0)
     setTimeLeft(SESSION_SECS); setTimerDone(false)
-    setBaselineReady(false)
+    setBaselineReady(false); setBaselineSampleCount(0)
     setMetrics({ stress: 0, focus: 0, relaxation: 0 })
     navigate('/summary', { state: sessionData })
   }, [navigate])
@@ -352,7 +354,7 @@ export default function EEGPage() {
       smoothedRef.current        = { stress: 50, focus: 50, relaxation: 50 }
       setIsRunning(false); setElapsed(0)
       setTimeLeft(SESSION_SECS); setTimerDone(false)
-      setBaselineReady(false)
+      setBaselineReady(false); setBaselineSampleCount(0)
       setMetrics({ stress: 0, focus: 0, relaxation: 0 })
     }
   }
@@ -364,6 +366,7 @@ export default function EEGPage() {
     baselineStatsRef.current   = null
     smoothedRef.current        = { stress: 50, focus: 50, relaxation: 50 }
     setBaselineReady(false)
+    setBaselineSampleCount(0)
   }
 
   const isLive = simMode || connectionStatus === 'Connected'
@@ -510,7 +513,12 @@ export default function EEGPage() {
           {isRunning && !simMode && !baselineReady && connectionStatus === 'Connected' && (
             <div style={{ marginBottom: 10, padding: '6px 12px', borderRadius: 8, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(161,120,0,0.2)' }}>
               <span style={{ fontSize: 10, color: '#7a5200' }}>
-                Calibrating baseline — {Math.max(0, BASELINE_SECS - elapsed)}s remaining
+                {elapsed < BASELINE_SECS && baselineSampleCount === 0
+                  ? `Waiting for signal — ${BASELINE_SECS - elapsed}s`
+                  : baselineSampleCount === 0
+                    ? 'No band data received — check electrode contact or signal quality'
+                    : `Calibrating baseline — ${baselineSampleCount} / ${BASELINE_SECS * 4} samples`
+                }
               </span>
             </div>
           )}
