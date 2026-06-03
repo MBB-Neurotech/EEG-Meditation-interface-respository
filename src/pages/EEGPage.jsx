@@ -87,7 +87,9 @@ function WaveformCanvas({ channelIndex, color, isRunning, eegBuffer }) {
 }
 
 // ── MetricBar ────────────────────────────────────────────────────────────────
-function MetricBar({ label, value, color }) {
+function MetricBar({ label, value, color, active }) {
+  const diff = Math.round((value - 50) / 5)
+  const disp = active ? (diff > 0 ? `+${diff}` : `${diff}`) : '—'
   return (
     <div className="flex flex-col items-center gap-2 flex-1">
       <span style={{ fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(15,30,65,0.45)' }}>
@@ -102,7 +104,7 @@ function MetricBar({ label, value, color }) {
           }} />
       </div>
       <span style={{ fontSize: 18, fontVariantNumeric: 'tabular-nums', fontWeight: 500, color, lineHeight: 1 }}>
-        {Math.round(value)}
+        {disp}
       </span>
     </div>
   )
@@ -494,9 +496,9 @@ export default function EEGPage() {
 
           {/* Metric bars */}
           <div className="flex gap-3" style={{ height: 160, marginBottom: 14 }}>
-            <MetricBar label="Stress"     value={isRunning ? metrics.stress     : 0} color="#dc2626" />
-            <MetricBar label="Focus"      value={isRunning ? metrics.focus      : 0} color="#4f46e5" />
-            <MetricBar label="Relaxation" value={isRunning ? metrics.relaxation : 0} color="#059669" />
+            <MetricBar label="Stress"     value={isRunning ? metrics.stress     : 0} color="#dc2626" active={isRunning} />
+            <MetricBar label="Focus"      value={isRunning ? metrics.focus      : 0} color="#4f46e5" active={isRunning} />
+            <MetricBar label="Relaxation" value={isRunning ? metrics.relaxation : 0} color="#059669" active={isRunning} />
           </div>
 
           {/* Status notices */}

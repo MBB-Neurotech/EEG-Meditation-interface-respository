@@ -143,17 +143,21 @@ function TimelineChart({ history }) {
 }
 
 // ── Stat card ────────────────────────────────────────────────────────────────
+function signed(n) { return (n >= 0 ? '+' : '') + n }
+
 function StatCard({ label, value, color, peak, peakTime }) {
+  const rel     = Math.round((value - 50) / 5)
+  const peakRel = Math.round((peak  - 50) / 5)
   return (
     <div style={{ flex: 1, padding: '18px 22px', borderRadius: 14, background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(70,130,200,0.12)', boxShadow: '0 1px 10px rgba(60,100,180,0.06)' }}>
       <div style={{ fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(15,30,65,0.38)', marginBottom: 10 }}>
         Avg {label}
       </div>
-      <div style={{ fontSize: 42, fontWeight: 300, color, fontVariantNumeric: 'tabular-nums', lineHeight: 1, marginBottom: 8 }}>
-        {Math.round(value)}
+      <div style={{ fontSize: 42, fontWeight: 300, color, fontVariantNumeric: 'tabular-nums', lineHeight: 1, marginBottom: 6 }}>
+        {signed(rel)}
       </div>
       <div style={{ fontSize: 10, color: 'rgba(15,30,65,0.32)' }}>
-        Peak {Math.round(peak)} at {formatTime(peakTime)}
+        vs. baseline · peak {signed(peakRel)} at {formatTime(peakTime)}
       </div>
     </div>
   )
